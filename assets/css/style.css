@@ -1,0 +1,433 @@
+/* =====================================================
+   Hotel PMS — Modern UI Stylesheet
+   Dark sidebar + light content, rounded cards, pill badges
+   ===================================================== */
+
+:root {
+    --sidebar-bg: #131c2e;
+    --sidebar-bg-active: #1e2a41;
+    --sidebar-text: #aab4c5;
+    --sidebar-text-active: #ffffff;
+    --sidebar-heading: #5c6b85;
+
+    --body-bg: #f4f6f9;
+    --card-bg: #ffffff;
+    --card-border-radius: 14px;
+    --card-shadow: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+
+    --brand-green: #1c7c3f;
+    --brand-green-dark: #166534;
+
+    --status-available: #2e7d32;
+    --status-reserved: #1565c0;
+    --status-occupied: #c62828;
+    --status-checked-out: #6c757d;
+    --status-cancelled: #c62828;
+
+    --text-dark: #101828;
+    --text-muted: #667085;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    background: var(--body-bg);
+    color: var(--text-dark);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* ===================== Layout ===================== */
+
+.app-wrapper {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.content-inner {
+    padding: 28px 32px;
+}
+
+/* ===================== Sidebar ===================== */
+
+.sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    min-height: 100vh;
+    padding: 22px 14px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+}
+
+.sidebar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 10px 22px 10px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.brand-icon {
+    font-size: 1.5rem;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.08);
+    border-radius: 10px;
+}
+
+.brand-text-group {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+
+.brand-text {
+    color: #ffffff;
+    font-weight: 700;
+    font-size: 0.95rem;
+}
+
+.brand-tagline {
+    color: var(--sidebar-heading);
+    font-size: 0.72rem;
+}
+
+.sidebar-nav {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar-nav li {
+    margin-bottom: 2px;
+}
+
+.sidebar-nav li a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    color: var(--sidebar-text);
+    text-decoration: none;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-nav li a:hover {
+    background: rgba(255,255,255,0.06);
+    color: #ffffff;
+}
+
+.sidebar-nav li.active a {
+    background: var(--brand-green);
+    color: #ffffff;
+}
+
+.sidebar-nav .nav-icon {
+    font-size: 1rem;
+    width: 20px;
+    text-align: center;
+}
+
+.sidebar-nav .sidebar-heading {
+    color: var(--sidebar-heading);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 18px 12px 8px 12px;
+}
+
+/* Mobile sidebar */
+.mobile-topbar {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+@media (max-width: 767.98px) {
+    .mobile-topbar { display: flex; }
+    .sidebar {
+        position: fixed;
+        left: -260px;
+        top: 0;
+        height: 100vh;
+        z-index: 1050;
+        transition: left 0.2s ease;
+    }
+    .sidebar.open { left: 0; }
+    .content-inner { padding: 18px; }
+}
+
+/* ===================== Page Header ===================== */
+
+.page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.page-header h3 {
+    font-weight: 700;
+    color: var(--text-dark);
+    margin-bottom: 2px;
+}
+
+.page-header .page-subtitle {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+/* ===================== Cards ===================== */
+
+.card-form {
+    background: var(--card-bg);
+    border-radius: var(--card-border-radius);
+    box-shadow: var(--card-shadow);
+    padding: 1.5rem;
+    border: 1px solid #eef1f5;
+}
+
+.section-title {
+    font-weight: 600;
+    color: #344054;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+}
+
+/* ===================== Stat Boxes ===================== */
+
+.stat-box {
+    background: var(--card-bg);
+    border-radius: var(--card-border-radius);
+    box-shadow: var(--card-shadow);
+    border: 1px solid #eef1f5;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.stat-box .stat-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.stat-num {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.stat-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #eef1f5;
+    font-size: 1rem;
+}
+
+.legend-dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+}
+
+/* ===================== Room Cards (Front Desk) ===================== */
+
+.room-card {
+    border-radius: var(--card-border-radius);
+    border: 1px solid #eef1f5;
+    box-shadow: var(--card-shadow);
+    height: 100%;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+    cursor: pointer;
+}
+
+.room-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 14px rgba(16,24,40,0.08);
+}
+
+.room-card .room-number {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.room-card .room-type-badge {
+    display: inline-block;
+    background: #eef1f5;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    padding: 3px 10px;
+    border-radius: 999px;
+}
+
+.room-card .price {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-dark);
+}
+
+.room-card .guest-name {
+    font-weight: 600;
+    color: var(--text-dark);
+    margin-bottom: 2px;
+}
+
+.room-card .meta-line {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+}
+
+.room-card .card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+/* Status pill (used on room cards + tables) */
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+.status-pill::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.status-pill.status-available {
+    background: rgba(46,125,50,0.12);
+    color: var(--status-available);
+}
+
+.status-pill.status-reserved {
+    background: rgba(21,101,192,0.12);
+    color: var(--status-reserved);
+}
+
+.status-pill.status-occupied {
+    background: rgba(198,40,40,0.12);
+    color: var(--status-occupied);
+}
+
+.status-pill.status-checked_out {
+    background: rgba(108,117,125,0.14);
+    color: var(--status-checked-out);
+}
+
+.status-pill.status-cancelled {
+    background: rgba(198,40,40,0.12);
+    color: var(--status-cancelled);
+}
+
+/* ===================== Buttons ===================== */
+
+.btn {
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.btn-success {
+    background: var(--brand-green);
+    border-color: var(--brand-green);
+}
+
+.btn-success:hover,
+.btn-success:focus {
+    background: var(--brand-green-dark);
+    border-color: var(--brand-green-dark);
+}
+
+.btn-primary {
+    background: #1565c0;
+    border-color: #1565c0;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+    background: #0d47a1;
+    border-color: #0d47a1;
+}
+
+/* ===================== Tables ===================== */
+
+.table {
+    font-size: 0.9rem;
+}
+
+.table thead th {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 700;
+    border-bottom-width: 1px;
+}
+
+/* ===================== Guest suggestion dropdown ===================== */
+
+.guest-suggestion-list {
+    display: none;
+    position: absolute;
+    z-index: 20;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    box-shadow: var(--card-shadow);
+    max-height: 220px;
+    overflow-y: auto;
+    margin-top: 4px;
+}
+
+.guest-suggestion-list .item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.88rem;
+}
+
+.guest-suggestion-list .item:hover {
+    background: #f4f6f9;
+}
