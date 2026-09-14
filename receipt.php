@@ -2,11 +2,25 @@
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/functions.php';
 
+// Load resort/wifi settings directly (no separate helper file)
+$settings = [];
+$settingsRows = fetch_all($conn, "SELECT setting_key, setting_value FROM settings");
+foreach ($settingsRows as $row) {
+    $settings[$row['setting_key']] = $row['setting_value'];
+}
+$resortName    = $settings['resort_name'] ?? 'Hotel PMS';
+$resortAddress = $settings['resort_address'] ?? '';
+$resortPhone   = $settings['resort_phone'] ?? '';
+$resortEmail   = $settings['resort_email'] ?? '';
+$resortWebsite = $settings['resort_website'] ?? '';
+$wifiName      = $settings['wifi_name'] ?? '';
+$wifiPassword  = $settings['wifi_password'] ?? '';
+
 $bookingId = (int)($_GET['booking_id'] ?? 0);
 $type = $_GET['type'] ?? 'checkin'; // checkin | extend | checkout
 
 if ($bookingId <= 0) {
-    header('Location: index.php');
+    header('Location: frontdesk.php');
     exit;
 }
 
@@ -21,7 +35,7 @@ $booking = fetch_one($conn, "
 ");
 
 if (!$booking) {
-    header('Location: index.php');
+    header('Location: frontdesk.php');
     exit;
 }
 
@@ -205,6 +219,9 @@ require_once __DIR__ . '/includes/header.php';
     .inv-payment-method { font-size: 11.5px; color: var(--inv-muted); line-height: 1.6; }
     .inv-payment-method strong { color: var(--inv-ink); }
     .inv-thankyou { text-align: right; font-size: 12px; color: var(--inv-accent-dark); font-style: italic; }
+    .inv-wifi-qr { text-align: center; flex-shrink: 0; }
+    .inv-wifi-qr canvas { display: block; margin: 0 auto; }
+    .inv-wifi-qr-label { font-size: 9.5px; color: var(--inv-muted); margin-top: 4px; letter-spacing: 0.3px; }
 
     /* ============ POS RECEIPT STYLE ============ */
     .pos-receipt {
@@ -224,6 +241,10 @@ require_once __DIR__ . '/includes/header.php';
     .pos-receipt td { padding: 1px 0; vertical-align: top; }
     .pos-receipt .brand { font-size: 15px; }
     .pos-receipt .small { font-size: 10px; }
+    .pos-wifi-qr { padding: 6px 0; text-align: center; }
+    .pos-wifi-qr #wifiQrPos { display: flex; justify-content: center; }
+    .pos-wifi-qr canvas, .pos-wifi-qr img { display: block; margin: 0 auto; }
+    .pos-wifi-qr .small { display: block; margin-top: 4px; }
 
     @media print {
         /* Hide EVERYTHING on the page (sidebar, header, nav, wrappers, etc.) */
@@ -269,7 +290,7 @@ require_once __DIR__ . '/includes/header.php';
     <div class="d-flex gap-2">
         <button class="btn btn-primary btn-sm" onclick="printReceipt('a4')">&#128424; Print A4 Invoice</button>
         <button class="btn btn-secondary btn-sm" onclick="printReceipt('pos')">&#128424; Print POS Receipt</button>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
     </div>
 </div>
 
@@ -279,8 +300,15 @@ require_once __DIR__ . '/includes/header.php';
         <div class="inv-brand">
             <div class="inv-logo">&#127976;</div>
             <div>
-                <div class="inv-hotel-name">Hotel Eco Resort</div>
-                <div class="inv-hotel-tag">GUEST SERVICES</div>
+                <div class="inv-hotel-name"><?php echo e($resortName); ?></div>
+                <?php if ($resortAddress || $resortPhone || $resortEmail): ?>
+                <div class="inv-hotel-tag">
+                    <?php
+                        $tagParts = array_filter([$resortPhone, $resortEmail, $resortWebsite]);
+                        echo e(implode(' · ', $tagParts));
+                    ?>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
         <div class="inv-title-block">
@@ -288,6 +316,9 @@ require_once __DIR__ . '/includes/header.php';
             <div class="inv-title-sub">Payment Receipt</div>
         </div>
     </div>
+    <?php if ($resortAddress): ?>
+    <div class="small text-muted mt-2" style="font-family: Arial, sans-serif; font-size: 11px;"><?php echo nl2br(e($resortAddress)); ?></div>
+    <?php endif; ?>
 
     <div class="inv-meta-row">
         <div>
@@ -301,7 +332,13 @@ require_once __DIR__ . '/includes/header.php';
             <tr><td>Invoice No:</td><td><?php echo e($invoiceNo); ?></td></tr>
             <tr><td>Date Issued:</td><td><?php echo date('d M Y'); ?></td></tr>
             <tr><td>Room:</td><td>#<?php echo e($booking['room_number']); ?> &mdash; <?php echo e($booking['type_name']); ?></td></tr>
-            <tr><td>Stay:</td><td><?php echo date('d M', strtotime($booking['check_in_date'])); ?> &ndash; <?php echo date('d M Y', strtotime($booking['check_out_date'])); ?></td></tr>
+            <tr><td>Stay:</td><td><?php echo date('d M', strtotime($booking['reserved_from'])); ?> &ndash; <?php echo date('d M Y', strtotime($booking['reserved_until'])); ?></td></tr>
+            <?php if (!empty($booking['checkin_at'])): ?>
+            <tr><td>Checked In:</td><td><?php echo date('d M Y, h:i A', strtotime($booking['checkin_at'])); ?></td></tr>
+            <?php endif; ?>
+            <?php if (!empty($booking['checkout_at'])): ?>
+            <tr><td>Checked Out:</td><td><?php echo date('d M Y, h:i A', strtotime($booking['checkout_at'])); ?></td></tr>
+            <?php endif; ?>
         </table>
     </div>
 
@@ -317,7 +354,7 @@ require_once __DIR__ . '/includes/header.php';
         <tbody>
             <tr>
                 <td>Room Charge &ndash; #<?php echo e($booking['room_number']); ?> (<?php echo e($booking['type_name']); ?>)</td>
-                <td class="num"><?php echo (int)$booking['total_days']; ?></td>
+                <td class="num"><?php echo (int)$booking['reserved_nights']; ?></td>
                 <td class="num">BDT <?php echo money($booking['price_per_day']); ?></td>
                 <td class="num">BDT <?php echo money($booking['room_charge_total']); ?></td>
             </tr>
@@ -376,9 +413,19 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="inv-footer">
         <div class="inv-payment-method">
-            <strong>Payment Method:</strong> Bank Transfer / Credit Card / Cash<br>
-            Payment details available upon request.
+            <?php if ($wifiName): ?>
+                <strong>Guest Wi-Fi:</strong> <?php echo e($wifiName); ?>
+                <?php if ($wifiPassword): ?> &nbsp;|&nbsp; <strong>Password:</strong> <?php echo e($wifiPassword); ?><?php endif; ?>
+                <br>
+            <?php endif; ?>
+            <?php if ($resortWebsite): ?><?php echo e($resortWebsite); ?><?php endif; ?>
         </div>
+        <?php if ($wifiName): ?>
+        <div class="inv-wifi-qr">
+            <div id="wifiQrA4"></div>
+            <div class="inv-wifi-qr-label">Scan to join Wi-Fi</div>
+        </div>
+        <?php endif; ?>
         <div class="inv-thankyou">
             Thank you for staying with us!<br>
             We hope to welcome you back soon.
@@ -388,7 +435,10 @@ require_once __DIR__ . '/includes/header.php';
 </div>
 
 <div class="pos-receipt">
-    <div class="center bold brand">HOTEL ECO RESORT</div>
+    <div class="center bold brand"><?php echo e(strtoupper($resortName)); ?></div>
+    <?php if ($resortAddress): ?><div class="center small"><?php echo nl2br(e($resortAddress)); ?></div><?php endif; ?>
+    <?php if ($resortPhone): ?><div class="center small"><?php echo e($resortPhone); ?></div><?php endif; ?>
+    <?php if ($resortWebsite): ?><div class="center small"><?php echo e($resortWebsite); ?></div><?php endif; ?>
     <div class="center small">Payment Receipt</div>
     <div class="divider"></div>
 
@@ -403,14 +453,20 @@ require_once __DIR__ . '/includes/header.php';
         <tr><td>Phone</td><td class="right"><?php echo e($booking['phone']); ?></td></tr>
         <tr><td>Room</td><td class="right">#<?php echo e($booking['room_number']); ?> (<?php echo e($booking['type_name']); ?>)</td></tr>
         <tr><td>Status</td><td class="right text-capitalize"><?php echo e(str_replace('_', ' ', $booking['status'])); ?></td></tr>
-        <tr><td>Check-in</td><td class="right"><?php echo date('d M Y', strtotime($booking['check_in_date'])); ?></td></tr>
-        <tr><td>Check-out</td><td class="right"><?php echo date('d M Y', strtotime($booking['check_out_date'])); ?></td></tr>
+        <tr><td>Reserved From</td><td class="right"><?php echo date('d M Y', strtotime($booking['reserved_from'])); ?></td></tr>
+        <tr><td>Reserved Until</td><td class="right"><?php echo date('d M Y', strtotime($booking['reserved_until'])); ?></td></tr>
+        <?php if (!empty($booking['checkin_at'])): ?>
+        <tr><td>Actual Check-in</td><td class="right"><?php echo date('d M Y, h:i A', strtotime($booking['checkin_at'])); ?></td></tr>
+        <?php endif; ?>
+        <?php if (!empty($booking['checkout_at'])): ?>
+        <tr><td>Actual Check-out</td><td class="right"><?php echo date('d M Y, h:i A', strtotime($booking['checkout_at'])); ?></td></tr>
+        <?php endif; ?>
     </table>
     <div class="divider"></div>
 
     <table>
         <tr>
-            <td>Room (<?php echo (int)$booking['total_days']; ?>d &times; BDT <?php echo money($booking['price_per_day']); ?>)</td>
+            <td>Room (<?php echo (int)$booking['reserved_nights']; ?>d &times; BDT <?php echo money($booking['price_per_day']); ?>)</td>
             <td class="right">BDT <?php echo money($booking['room_charge_total']); ?></td>
         </tr>
         <?php if ((float)$booking['extension_charge_total'] > 0): ?>
@@ -456,6 +512,20 @@ require_once __DIR__ . '/includes/header.php';
     </table>
     <div class="divider"></div>
 
+    <?php if ($wifiName): ?>
+    <table>
+        <tr><td>Wi-Fi</td><td class="right"><?php echo e($wifiName); ?></td></tr>
+        <?php if ($wifiPassword): ?>
+        <tr><td>Password</td><td class="right"><?php echo e($wifiPassword); ?></td></tr>
+        <?php endif; ?>
+    </table>
+    <div class="center pos-wifi-qr">
+        <div id="wifiQrPos"></div>
+        <div class="small">Scan to join Wi-Fi</div>
+    </div>
+    <div class="divider"></div>
+    <?php endif; ?>
+
     <div class="center small">Thank you for staying with us!</div>
 </div>
 
@@ -466,6 +536,7 @@ require_once __DIR__ . '/includes/header.php';
     <?php endif; ?>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 function printReceipt(mode) {
     // mode: 'a4' or 'pos'
@@ -485,6 +556,31 @@ function printReceipt(mode) {
 
     window.print();
 }
+
+<?php if ($wifiName): ?>
+document.addEventListener('DOMContentLoaded', function () {
+    // Escape special characters per the WIFI: URI spec (\, ;, ,, :)
+    function escapeWifiField(value) {
+        return String(value).replace(/([\\;,:"])/g, '\\$1');
+    }
+
+    var ssid = <?php echo json_encode($wifiName); ?>;
+    var password = <?php echo json_encode($wifiPassword); ?>;
+    var authType = password ? 'WPA' : 'nopass';
+    var wifiString = 'WIFI:T:' + authType + ';S:' + escapeWifiField(ssid) + ';'
+        + (password ? 'P:' + escapeWifiField(password) + ';' : '')
+        + ';';
+
+    var a4Target = document.getElementById('wifiQrA4');
+    if (a4Target) {
+        new QRCode(a4Target, { text: wifiString, width: 84, height: 84, correctLevel: QRCode.CorrectLevel.M });
+    }
+    var posTarget = document.getElementById('wifiQrPos');
+    if (posTarget) {
+        new QRCode(posTarget, { text: wifiString, width: 100, height: 100, correctLevel: QRCode.CorrectLevel.M });
+    }
+});
+<?php endif; ?>
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

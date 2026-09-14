@@ -30,12 +30,26 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === 'room_info') {
     json_out($room ?: []);
 }
 
+// =====================================================
+// AJAX: Availability check for a room across a date range
+// (used to warn the receptionist live, before submit)
+// =====================================================
+if (isset($_GET['ajax']) && $_GET['ajax'] === 'check_availability') {
+    $roomId = (int)($_GET['room_id'] ?? 0);
+    $from = trim($_GET['reserved_from'] ?? '');
+    $until = trim($_GET['reserved_until'] ?? '');
+    if ($roomId <= 0 || $from === '' || $until === '') json_out(['available' => false, 'reason' => 'Missing parameters']);
+    $conflict = booking_conflict_exists($conn, $roomId, $from, $until);
+    json_out(['available' => !$conflict]);
+}
+
 $pageTitle = 'New Reservation';
 $active = 'reservation';
 $error = '';
 $success = '';
 
 $preselectedRoomId = (int)($_GET['room_id'] ?? 0);
+$today = date('Y-m-d');
 
 // =====================================================
 // Form submission (create guest if needed + booking)
@@ -49,18 +63,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $idProofType = trim($_POST['id_proof_type'] ?? '');
     $idProofNumber = trim($_POST['id_proof_number'] ?? '');
     $address = trim($_POST['address'] ?? '');
-    $checkIn = trim($_POST['check_in_date'] ?? '');
-    $checkOut = trim($_POST['check_out_date'] ?? '');
-    $proceedToCheckin = isset($_POST['proceed_to_checkin']);
+    $reservedFrom = trim($_POST['reserved_from'] ?? '');
+    $reservedNights = (int)($_POST['reserved_nights'] ?? 0);
+    $adults = max(1, (int)($_POST['adults'] ?? 1));
+    $children = max(0, (int)($_POST['children'] ?? 0));
 
-    if ($roomId <= 0 || $fullName === '' || $phone === '' || $checkIn === '' || $checkOut === '') {
-        $error = 'Please fill all required fields.';
-    } elseif (strtotime($checkOut) <= strtotime($checkIn)) {
-        $error = 'Check-out date must be after check-in date.';
+    if ($roomId <= 0 || $fullName === '' || $phone === '' || $reservedFrom === '' || $reservedNights < 1) {
+        $error = 'Please fill all required fields (room, guest, reserved-from date, and at least 1 night).';
     } else {
-        $room = fetch_one($conn, "SELECT * FROM rooms WHERE id = $roomId AND status = 'available'");
+        // reserved_until is always derived server-side, never trusted from the client directly
+        $reservedUntil = date('Y-m-d', strtotime($reservedFrom . " +$reservedNights days"));
+
+        $room = fetch_one($conn, "SELECT * FROM rooms WHERE id = $roomId AND is_active = 1 AND status NOT IN ('maintenance','out_of_service')");
         if (!$room) {
-            $error = 'Selected room is no longer available.';
+            $error = 'Selected room is not bookable (inactive, in maintenance, or out of service).';
+        } elseif (booking_conflict_exists($conn, $roomId, $reservedFrom, $reservedUntil)) {
+            $error = 'This room already has an overlapping reservation for the selected dates.';
         } else {
             mysqli_begin_transaction($conn);
             try {
@@ -81,21 +99,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     mysqli_stmt_close($stmt);
                 }
 
-                $totalDays = days_between($checkIn, $checkOut);
                 $pricePerDay = (float)$room['price_per_day'];
-                $roomChargeTotal = $totalDays * $pricePerDay;
-                $status = $proceedToCheckin ? 'reserved' : 'reserved';
+                $roomChargeTotal = $reservedNights * $pricePerDay;
+                $reservationDate = $today;
+                $reservationNo = generate_reservation_no($conn, $reservationDate);
 
                 $stmt = mysqli_prepare($conn, "
-                    INSERT INTO bookings (room_id, guest_id, check_in_date, check_out_date, price_per_day, total_days, room_charge_total, status)
-                    VALUES (?,?,?,?,?,?,?,'reserved')
+                    INSERT INTO bookings
+                        (reservation_no, room_id, guest_id, reservation_date, reserved_from, reserved_nights, reserved_until,
+                         adults, children, price_per_day, room_charge_total, status)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,'reserved')
                 ");
-                mysqli_stmt_bind_param($stmt, 'iissdid', $roomId, $guestId, $checkIn, $checkOut, $pricePerDay, $totalDays, $roomChargeTotal);
+                // Params in order: reservation_no(s), room_id(i), guest_id(i), reservation_date(s),
+                // reserved_from(s), reserved_nights(i), reserved_until(s), adults(i), children(i),
+                // price_per_day(d), room_charge_total(d)
+                mysqli_stmt_bind_param(
+                    $stmt, 'siissisiidd',
+                    $reservationNo, $roomId, $guestId, $reservationDate, $reservedFrom, $reservedNights, $reservedUntil,
+                    $adults, $children, $pricePerDay, $roomChargeTotal
+                );
                 mysqli_stmt_execute($stmt);
                 $bookingId = mysqli_insert_id($conn);
                 mysqli_stmt_close($stmt);
 
-                mysqli_query($conn, "UPDATE rooms SET status = 'reserved' WHERE id = $roomId");
+                // Room's manual `status` flag is left as-is (available); the dashboard/
+                // reservation list derives day-to-day occupancy from booking date ranges,
+                // so a future reservation does not block the room from showing as
+                // available today. See get_room_effective_status().
 
                 mysqli_commit($conn);
 
@@ -110,22 +140,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Rooms bookable today: active, not in maintenance/out-of-service, and with
+// no reservation covering today's date. Rooms with a *future* reservation
+// still show up here (they're available today) — the pending list below
+// just makes the upcoming booking visible.
 $availableRooms = fetch_all($conn, "
     SELECT r.id, r.room_number, r.price_per_day, rt.name AS type_name
     FROM rooms r JOIN room_types rt ON rt.id = r.room_type_id
-    WHERE r.status = 'available' AND r.is_active = 1
+    WHERE r.is_active = 1
+      AND r.status NOT IN ('maintenance','out_of_service')
+      AND NOT EXISTS (
+          SELECT 1 FROM bookings b
+          WHERE b.room_id = r.id
+            AND b.status IN ('reserved','checked_in')
+            AND '$today' >= b.reserved_from AND '$today' < b.reserved_until
+      )
     ORDER BY r.room_number ASC
 ");
 
 // Pending reservations (reserved, not yet checked in) — surfaced here so staff can
 // jump straight to check-in or cancel without leaving the reservation workflow.
 $pendingReservations = fetch_all($conn, "
-    SELECT b.id AS booking_id, r.room_number, g.full_name, g.phone, b.check_in_date, b.check_out_date
+    SELECT b.id AS booking_id, b.reservation_no, r.room_number, g.full_name, g.phone, b.reserved_from, b.reserved_until
     FROM bookings b
     JOIN rooms r ON r.id = b.room_id
     JOIN guests g ON g.id = b.guest_id
     WHERE b.status = 'reserved'
-    ORDER BY b.check_in_date ASC
+    ORDER BY b.reserved_from ASC
 ");
 
 require_once __DIR__ . '/includes/header.php';
@@ -135,7 +176,7 @@ require_once __DIR__ . '/includes/header.php';
     <h3>New Reservation</h3>
     <div class="d-flex gap-2">
         <a href="reservation_cancel.php" class="btn btn-outline-danger btn-sm">Cancel a Reservation</a>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
     </div>
 </div>
 
@@ -146,14 +187,15 @@ require_once __DIR__ . '/includes/header.php';
     <div class="section-title">Pending Reservations (Not Yet Checked In)</div>
     <div class="table-responsive">
         <table class="table table-sm align-middle mb-0">
-            <thead><tr><th>Room</th><th>Guest</th><th>Check-in</th><th>Check-out</th><th class="text-end">Actions</th></tr></thead>
+            <thead><tr><th>Reservation #</th><th>Room</th><th>Guest</th><th>Reserved From</th><th>Reserved Until</th><th class="text-end">Actions</th></tr></thead>
             <tbody>
             <?php foreach ($pendingReservations as $p): ?>
                 <tr>
+                    <td class="text-muted small"><?php echo e($p['reservation_no']); ?></td>
                     <td class="fw-semibold">#<?php echo e($p['room_number']); ?></td>
                     <td><?php echo e($p['full_name']); ?> <span class="text-muted small">(<?php echo e($p['phone']); ?>)</span></td>
-                    <td><?php echo date('d M Y', strtotime($p['check_in_date'])); ?></td>
-                    <td><?php echo date('d M Y', strtotime($p['check_out_date'])); ?></td>
+                    <td><?php echo date('d M Y', strtotime($p['reserved_from'])); ?></td>
+                    <td><?php echo date('d M Y', strtotime($p['reserved_until'])); ?></td>
                     <td class="text-end">
                         <a href="checkin.php?booking_id=<?php echo (int)$p['booking_id']; ?>" class="btn btn-sm btn-primary">Check In</a>
                         <a href="reservation_cancel.php?booking_id=<?php echo (int)$p['booking_id']; ?>" class="btn btn-sm btn-outline-danger">Cancel</a>
@@ -192,20 +234,45 @@ require_once __DIR__ . '/includes/header.php';
                     </select>
                 </div>
 
+                <div class="mb-2">
+                    <span class="text-muted small">Reservation Date (today)</span>
+                    <div class="fw-semibold"><?php echo date('d M Y'); ?></div>
+                </div>
+
                 <div class="row">
                     <div class="col-6 mb-3">
-                        <label class="form-label">Check-in Date *</label>
-                        <input type="date" name="check_in_date" id="check_in_date" class="form-control" required value="<?php echo date('Y-m-d'); ?>">
+                        <label class="form-label">Reserved From *</label>
+                        <input type="date" name="reserved_from" id="reserved_from" class="form-control" required value="<?php echo $today; ?>" min="<?php echo $today; ?>">
                     </div>
                     <div class="col-6 mb-3">
-                        <label class="form-label">Check-out Date *</label>
-                        <input type="date" name="check_out_date" id="check_out_date" class="form-control" required value="<?php echo date('Y-m-d', strtotime('+1 day')); ?>">
+                        <label class="form-label">Number of Nights *</label>
+                        <input type="number" name="reserved_nights" id="reserved_nights" class="form-control" required min="1" value="1">
                     </div>
+                </div>
+
+                <div class="mb-3">
+                    <span class="text-muted small">Reserved Until (auto-calculated)</span>
+                    <div class="fw-semibold" id="reservedUntilDisplay">—</div>
+                </div>
+
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <label class="form-label">Adults</label>
+                        <input type="number" name="adults" id="adults" class="form-control" min="1" value="1">
+                    </div>
+                    <div class="col-6 mb-3">
+                        <label class="form-label">Children</label>
+                        <input type="number" name="children" id="children" class="form-control" min="0" value="0">
+                    </div>
+                </div>
+
+                <div id="availabilityWarning" class="alert alert-danger d-none py-2 mb-3">
+                    This room already has an overlapping reservation for these dates.
                 </div>
 
                 <div class="p-3 rounded" style="background:#f4f6f9;">
                     <div class="d-flex justify-content-between"><span>Price / day</span><strong id="calcPrice">৳0.00</strong></div>
-                    <div class="d-flex justify-content-between"><span>Total days</span><strong id="calcDays">0</strong></div>
+                    <div class="d-flex justify-content-between"><span>Total nights</span><strong id="calcDays">0</strong></div>
                     <hr class="my-2">
                     <div class="d-flex justify-content-between fs-5"><span>Total Cost</span><strong id="calcTotal" class="text-success">৳0.00</strong></div>
                 </div>
@@ -261,8 +328,8 @@ require_once __DIR__ . '/includes/header.php';
 
         <hr class="my-4">
         <div class="d-flex justify-content-end gap-2">
-            <a href="index.php" class="btn btn-outline-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">Save Reservation &amp; Proceed to Check-In</button>
+            <a href="frontdesk.php" class="btn btn-outline-secondary">Cancel</a>
+            <button type="submit" class="btn btn-primary" id="submitReservation">Save Reservation &amp; Proceed to Check-In</button>
         </div>
     </form>
 </div>
@@ -274,29 +341,74 @@ $extraScript = <<<'HTML'
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     const roomSelect = document.getElementById('room_id');
-    const checkIn = document.getElementById('check_in_date');
-    const checkOut = document.getElementById('check_out_date');
+    const reservedFrom = document.getElementById('reserved_from');
+    const reservedNights = document.getElementById('reserved_nights');
+    const reservedUntilDisplay = document.getElementById('reservedUntilDisplay');
     const calcPrice = document.getElementById('calcPrice');
     const calcDays = document.getElementById('calcDays');
     const calcTotal = document.getElementById('calcTotal');
+    const availabilityWarning = document.getElementById('availabilityWarning');
+    const submitBtn = document.getElementById('submitReservation');
+
+    function computeUntil() {
+        const from = new Date(reservedFrom.value);
+        let nights = parseInt(reservedNights.value || '0', 10);
+        if (isNaN(nights) || nights < 1) nights = 1;
+        if (isNaN(from.getTime())) return null;
+        const until = new Date(from);
+        until.setDate(until.getDate() + nights);
+        return until;
+    }
+
+    function fmt(d) {
+        if (!d) return '—';
+        return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+
+    let availCheckTimer = null;
+    function checkAvailability() {
+        const opt = roomSelect.options[roomSelect.selectedIndex];
+        const roomId = opt ? opt.value : '';
+        const until = computeUntil();
+        if (!roomId || !reservedFrom.value || !until) {
+            availabilityWarning.classList.add('d-none');
+            return;
+        }
+        const untilStr = until.toISOString().slice(0, 10);
+
+        clearTimeout(availCheckTimer);
+        availCheckTimer = setTimeout(function () {
+            fetch('reservation.php?ajax=check_availability&room_id=' + encodeURIComponent(roomId)
+                + '&reserved_from=' + encodeURIComponent(reservedFrom.value)
+                + '&reserved_until=' + encodeURIComponent(untilStr))
+                .then(res => res.json())
+                .then(data => {
+                    const isAvailable = !!data.available;
+                    availabilityWarning.classList.toggle('d-none', isAvailable);
+                    submitBtn.disabled = !isAvailable;
+                });
+        }, 250);
+    }
 
     function recalc() {
         const opt = roomSelect.options[roomSelect.selectedIndex];
         const price = opt ? parseFloat(opt.dataset.price || 0) : 0;
+        let nights = parseInt(reservedNights.value || '0', 10);
+        if (isNaN(nights) || nights < 1) nights = 1;
 
-        const d1 = new Date(checkIn.value);
-        const d2 = new Date(checkOut.value);
-        let days = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
-        if (isNaN(days) || days < 1) days = days < 0 ? 0 : 1;
+        const until = computeUntil();
+        reservedUntilDisplay.textContent = fmt(until);
 
         calcPrice.textContent = '৳' + price.toFixed(2);
-        calcDays.textContent = days;
-        calcTotal.textContent = '৳' + (price * days).toFixed(2);
+        calcDays.textContent = nights;
+        calcTotal.textContent = '৳' + (price * nights).toFixed(2);
+
+        checkAvailability();
     }
 
     roomSelect.addEventListener('change', recalc);
-    checkIn.addEventListener('change', recalc);
-    checkOut.addEventListener('change', recalc);
+    reservedFrom.addEventListener('change', recalc);
+    reservedNights.addEventListener('input', recalc);
     recalc();
 
     const guestSearch = document.getElementById('guestSearch');

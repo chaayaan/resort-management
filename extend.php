@@ -13,7 +13,7 @@ $bookingId = (int)($_GET['booking_id'] ?? $_POST['booking_id'] ?? 0);
 // =====================================================
 if ($bookingId <= 0) {
     $occupied = fetch_all($conn, "
-        SELECT b.id AS booking_id, r.room_number, g.full_name, b.check_out_date
+        SELECT b.id AS booking_id, r.room_number, g.full_name, b.reserved_until
         FROM bookings b
         JOIN rooms r ON r.id = b.room_id
         JOIN guests g ON g.id = b.guest_id
@@ -25,7 +25,7 @@ if ($bookingId <= 0) {
     ?>
     <div class="page-header">
         <h3>Extend Stay — Select Room</h3>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
     </div>
 
     <?php if (empty($occupied)): ?>
@@ -40,7 +40,7 @@ if ($bookingId <= 0) {
                         <tr>
                             <td class="fw-semibold">#<?php echo e($o['room_number']); ?></td>
                             <td><?php echo e($o['full_name']); ?></td>
-                            <td><?php echo date('d M Y', strtotime($o['check_out_date'])); ?></td>
+                            <td><?php echo date('d M Y', strtotime($o['reserved_until'])); ?></td>
                             <td class="text-end">
                                 <a href="extend.php?booking_id=<?php echo (int)$o['booking_id']; ?>" class="btn btn-sm btn-primary">Extend</a>
                             </td>
@@ -60,7 +60,7 @@ if ($bookingId <= 0) {
 // Handle extension submission
 // =====================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $newCheckOut = trim($_POST['new_check_out_date'] ?? '');
+    $newReservedUntil = trim($_POST['new_check_out_date'] ?? '');
     $paymentAmount = (float)($_POST['payment_amount'] ?? 0);
     $paymentMethod = trim($_POST['payment_method'] ?? 'cash');
 
@@ -68,39 +68,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (!$booking) {
         $error = 'Booking not found or not currently checked in.';
-    } elseif (strtotime($newCheckOut) <= strtotime($booking['check_out_date'])) {
-        $error = 'New check-out date must be after the current check-out date (' . date('d M Y', strtotime($booking['check_out_date'])) . ').';
+    } elseif (strtotime($newReservedUntil) <= strtotime($booking['reserved_until'])) {
+        $error = 'New check-out date must be after the current check-out date (' . date('d M Y', strtotime($booking['reserved_until'])) . ').';
     } else {
         mysqli_begin_transaction($conn);
         try {
-            $oldCheckOut = $booking['check_out_date'];
-            $addedDays = days_between($oldCheckOut, $newCheckOut);
-            $addedCharge = $addedDays * (float)$booking['price_per_day'];
+            $oldReservedUntil = $booking['reserved_until'];
+            $addedNights = days_between($oldReservedUntil, $newReservedUntil);
+            $addedCharge = $addedNights * (float)$booking['price_per_day'];
 
-            $newTotalDays = (int)$booking['total_days'] + $addedDays;
+            $newReservedNights = (int)$booking['reserved_nights'] + $addedNights;
             $newExtensionTotal = (float)$booking['extension_charge_total'] + $addedCharge;
             $newExtraPaid = (float)$booking['extra_paid'] + $paymentAmount;
 
             $stmt = mysqli_prepare($conn, "
                 UPDATE bookings
-                SET check_out_date = ?, total_days = ?, extension_charge_total = ?, extra_paid = ?
+                SET reserved_until = ?, reserved_nights = ?, extension_charge_total = ?, extra_paid = ?
                 WHERE id = ?
             ");
-            mysqli_stmt_bind_param($stmt, 'siddi', $newCheckOut, $newTotalDays, $newExtensionTotal, $newExtraPaid, $bookingId);
+            mysqli_stmt_bind_param($stmt, 'siddi', $newReservedUntil, $newReservedNights, $newExtensionTotal, $newExtraPaid, $bookingId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
             $stmt = mysqli_prepare($conn, "
-                INSERT INTO booking_extensions (booking_id, old_check_out_date, new_check_out_date, added_days, added_charge, payment_amount)
+                INSERT INTO booking_extensions (booking_id, old_reserved_until, new_reserved_until, added_nights, added_charge, payment_amount)
                 VALUES (?,?,?,?,?,?)
             ");
-            mysqli_stmt_bind_param($stmt, 'issidd', $bookingId, $oldCheckOut, $newCheckOut, $addedDays, $addedCharge, $paymentAmount);
+            mysqli_stmt_bind_param($stmt, 'issidd', $bookingId, $oldReservedUntil, $newReservedUntil, $addedNights, $addedCharge, $paymentAmount);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
             if ($paymentAmount > 0) {
                 $stmt = mysqli_prepare($conn, "INSERT INTO payments (booking_id, payment_type, amount, payment_method, reference_note) VALUES (?, 'extension', ?, ?, ?)");
-                $note = "Extended to " . $newCheckOut;
+                $note = "Extended to " . $newReservedUntil;
                 mysqli_stmt_bind_param($stmt, 'idss', $bookingId, $paymentAmount, $paymentMethod, $note);
                 mysqli_stmt_execute($stmt);
                 mysqli_stmt_close($stmt);
@@ -146,7 +146,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="page-header">
     <h3>Extend Stay — Room #<?php echo e($booking['room_number']); ?></h3>
-    <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
@@ -164,8 +164,8 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="col-6"><span class="text-muted">Price / Day</span><div class="fw-semibold">৳<?php echo money($booking['price_per_day']); ?></div></div>
             </div>
             <div class="row mb-2">
-                <div class="col-6"><span class="text-muted">Current Check-out</span><div class="fw-semibold" id="currentCheckout"><?php echo date('d M Y', strtotime($booking['check_out_date'])); ?></div></div>
-                <div class="col-6"><span class="text-muted">Total Days So Far</span><div class="fw-semibold"><?php echo (int)$booking['total_days']; ?></div></div>
+                <div class="col-6"><span class="text-muted">Current Check-out</span><div class="fw-semibold" id="currentCheckout"><?php echo date('d M Y', strtotime($booking['reserved_until'])); ?></div></div>
+                <div class="col-6"><span class="text-muted">Total Nights So Far</span><div class="fw-semibold"><?php echo (int)$booking['reserved_nights']; ?></div></div>
             </div>
             <hr>
             <div class="row mb-2">
@@ -184,8 +184,8 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="mb-3">
                     <label class="form-label">New Check-out Date *</label>
                     <input type="date" name="new_check_out_date" id="new_check_out_date" class="form-control" required
-                        min="<?php echo date('Y-m-d', strtotime($booking['check_out_date'] . ' +1 day')); ?>"
-                        value="<?php echo date('Y-m-d', strtotime($booking['check_out_date'] . ' +1 day')); ?>">
+                        min="<?php echo date('Y-m-d', strtotime($booking['reserved_until'] . ' +1 day')); ?>"
+                        value="<?php echo date('Y-m-d', strtotime($booking['reserved_until'] . ' +1 day')); ?>">
                 </div>
 
                 <div class="p-3 rounded mb-3" style="background:#f4f6f9;">
@@ -215,7 +215,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php
 $pricePerDay = (float)$booking['price_per_day'];
-$currentCheckoutJs = $booking['check_out_date'];
+$currentCheckoutJs = $booking['reserved_until'];
 $extraScript = <<<HTML
 <script>
 document.addEventListener('DOMContentLoaded', function () {

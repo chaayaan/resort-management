@@ -13,7 +13,7 @@ $bookingId = (int)($_GET['booking_id'] ?? $_POST['booking_id'] ?? 0);
 // =====================================================
 if ($bookingId <= 0) {
     $occupied = fetch_all($conn, "
-        SELECT b.id AS booking_id, r.room_number, g.full_name, b.check_out_date
+        SELECT b.id AS booking_id, r.room_number, g.full_name, b.reserved_from, b.reserved_until
         FROM bookings b
         JOIN rooms r ON r.id = b.room_id
         JOIN guests g ON g.id = b.guest_id
@@ -25,7 +25,7 @@ if ($bookingId <= 0) {
     ?>
     <div class="page-header">
         <h3>Checkout — Select Room</h3>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
     </div>
 
     <?php if (empty($occupied)): ?>
@@ -34,13 +34,13 @@ if ($bookingId <= 0) {
         <div class="card-form">
             <div class="table-responsive">
                 <table class="table align-middle">
-                    <thead><tr><th>Room</th><th>Guest</th><th>Expected Check-out</th><th class="text-end">Action</th></tr></thead>
+                    <thead><tr><th>Room</th><th>Guest</th><th>Reservation Range</th><th class="text-end">Action</th></tr></thead>
                     <tbody>
                     <?php foreach ($occupied as $o): ?>
                         <tr>
                             <td class="fw-semibold">#<?php echo e($o['room_number']); ?></td>
                             <td><?php echo e($o['full_name']); ?></td>
-                            <td><?php echo date('d M Y', strtotime($o['check_out_date'])); ?></td>
+                            <td><?php echo date('d M Y', strtotime($o['reserved_from'])); ?> &ndash; <?php echo date('d M Y', strtotime($o['reserved_until'])); ?></td>
                             <td class="text-end">
                                 <a href="checkout.php?booking_id=<?php echo (int)$o['booking_id']; ?>" class="btn btn-sm btn-danger">Checkout</a>
                             </td>
@@ -61,24 +61,31 @@ if ($bookingId <= 0) {
 // =====================================================
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $finalPayment = (float)($_POST['final_payment'] ?? 0);
-    $discount = (float)($_POST['discount'] ?? 0);
+    $checkoutDiscount = (float)($_POST['discount'] ?? 0);
     $paymentMethod = trim($_POST['payment_method'] ?? 'cash');
 
     $booking = fetch_one($conn, "SELECT * FROM bookings WHERE id = $bookingId AND status = 'checked_in'");
 
     if (!$booking) {
         $error = 'Booking not found or not currently checked in.';
+    } elseif ($checkoutDiscount < 0) {
+        $error = 'Discount cannot be negative.';
     } else {
         mysqli_begin_transaction($conn);
         try {
             $newFinalPaid = (float)$booking['final_paid'] + $finalPayment;
+            // Checkout discount is added on top of any discount already applied at
+            // check-in, rather than overwriting it.
+            $newTotalDiscount = (float)$booking['discount'] + $checkoutDiscount;
 
+            // checkout_at records the ACTUAL departure timestamp, independent of the
+            // planned reserved_until date (guest may leave early, late, or on time).
             $stmt = mysqli_prepare($conn, "
                 UPDATE bookings
-                SET final_paid = ?, discount = ?, status = 'checked_out', actual_check_out_at = NOW()
+                SET final_paid = ?, discount = ?, status = 'checked_out', checkout_at = NOW()
                 WHERE id = ?
             ");
-            mysqli_stmt_bind_param($stmt, 'ddi', $newFinalPaid, $discount, $bookingId);
+            mysqli_stmt_bind_param($stmt, 'ddi', $newFinalPaid, $newTotalDiscount, $bookingId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
@@ -127,14 +134,15 @@ $paidSoFar = fetch_one($conn, "SELECT COALESCE(SUM(amount),0) AS total FROM paym
 $totalPaidSoFar = $paidSoFar ? (float)$paidSoFar['total'] : 0;
 
 $grandTotal = (float)$booking['room_charge_total'] + (float)$booking['extension_charge_total'];
-$balanceBeforeDiscount = $grandTotal - $totalPaidSoFar;
+$existingDiscount = (float)$booking['discount']; // discount already applied at check-in
+$balanceBeforeDiscount = $grandTotal - $existingDiscount - $totalPaidSoFar;
 
 require_once __DIR__ . '/includes/header.php';
 ?>
 
 <div class="page-header">
     <h3>Checkout — Room #<?php echo e($booking['room_number']); ?></h3>
-    <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
@@ -147,18 +155,25 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="col-6"><span class="text-muted">Guest</span><div class="fw-semibold"><?php echo e($booking['full_name']); ?></div></div>
                 <div class="col-6"><span class="text-muted">Phone</span><div class="fw-semibold"><?php echo e($booking['phone']); ?></div></div>
             </div>
+            <div class="row mb-2">
+                <div class="col-6"><span class="text-muted">Reserved From</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reserved_from'])); ?></div></div>
+                <div class="col-6"><span class="text-muted">Reserved Until</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reserved_until'])); ?></div></div>
+            </div>
             <table class="table table-sm mt-3">
                 <tbody>
-                    <tr><td>Room Charge (<?php echo (int)$booking['total_days']; ?> days)</td><td class="text-end">৳<?php echo money($booking['room_charge_total']); ?></td></tr>
+                    <tr><td>Room Charge (<?php echo (int)$booking['reserved_nights']; ?> nights)</td><td class="text-end">৳<?php echo money($booking['room_charge_total']); ?></td></tr>
                     <?php if ((float)$booking['extension_charge_total'] > 0): ?>
                     <tr><td>Extension Charges</td><td class="text-end">৳<?php echo money($booking['extension_charge_total']); ?></td></tr>
                     <?php endif; ?>
                     <tr class="table-light"><td class="fw-bold">Total Charges</td><td class="text-end fw-bold">৳<?php echo money($grandTotal); ?></td></tr>
+                    <?php if ($existingDiscount > 0): ?>
+                    <tr><td>Discount (applied at check-in)</td><td class="text-end text-danger">-৳<?php echo money($existingDiscount); ?></td></tr>
+                    <?php endif; ?>
                     <tr><td>Advance Paid</td><td class="text-end text-success">-৳<?php echo money($booking['advance_paid']); ?></td></tr>
                     <?php if ((float)$booking['extra_paid'] > 0): ?>
                     <tr><td>Extension Payments</td><td class="text-end text-success">-৳<?php echo money($booking['extra_paid']); ?></td></tr>
                     <?php endif; ?>
-                    <tr class="table-light"><td class="fw-bold">Balance Before Discount</td><td class="text-end fw-bold" id="balanceBeforeDiscount" data-value="<?php echo $balanceBeforeDiscount; ?>">৳<?php echo money($balanceBeforeDiscount); ?></td></tr>
+                    <tr class="table-light"><td class="fw-bold">Balance Before Additional Discount</td><td class="text-end fw-bold" id="balanceBeforeDiscount" data-value="<?php echo $balanceBeforeDiscount; ?>">৳<?php echo money($balanceBeforeDiscount); ?></td></tr>
                 </tbody>
             </table>
         </div>
@@ -171,8 +186,12 @@ require_once __DIR__ . '/includes/header.php';
                 <input type="hidden" name="booking_id" value="<?php echo $bookingId; ?>">
 
                 <div class="mb-3">
-                    <label class="form-label">Discount (৳)</label>
+                    <label class="form-label">Additional Discount (৳)</label>
                     <input type="number" step="0.01" min="0" name="discount" id="discount" class="form-control" value="0">
+                    <div class="form-text">
+                        Added on top of the ৳<?php echo money($existingDiscount); ?> discount already applied at check-in
+                        (total discount will become ৳<?php echo money($existingDiscount); ?> + this amount).
+                    </div>
                 </div>
 
                 <div class="p-3 rounded mb-3" style="background:#f4f6f9;">

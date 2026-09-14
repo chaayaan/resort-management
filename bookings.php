@@ -26,10 +26,10 @@ if ($statusFilter !== '') {
     $where[] = "b.status = '" . mysqli_real_escape_string($conn, $statusFilter) . "'";
 }
 if ($fromDate !== '') {
-    $where[] = "b.check_in_date >= '" . mysqli_real_escape_string($conn, $fromDate) . "'";
+    $where[] = "b.reserved_from >= '" . mysqli_real_escape_string($conn, $fromDate) . "'";
 }
 if ($toDate !== '') {
-    $where[] = "b.check_out_date <= '" . mysqli_real_escape_string($conn, $toDate) . "'";
+    $where[] = "b.reserved_until <= '" . mysqli_real_escape_string($conn, $toDate) . "'";
 }
 
 $whereSql = implode(' AND ', $where);
@@ -94,11 +94,11 @@ require_once __DIR__ . '/includes/header.php';
             </select>
         </div>
         <div class="col-md-2">
-            <label class="form-label small text-muted">Check-in From</label>
+            <label class="form-label small text-muted">Reserved From</label>
             <input type="date" name="from" class="form-control" value="<?php echo e($fromDate); ?>">
         </div>
         <div class="col-md-2">
-            <label class="form-label small text-muted">Check-out To</label>
+            <label class="form-label small text-muted">Reserved Until</label>
             <input type="date" name="to" class="form-control" value="<?php echo e($toDate); ?>">
         </div>
         <div class="col-md-2 d-flex gap-2">
@@ -119,9 +119,9 @@ require_once __DIR__ . '/includes/header.php';
                     <th>ID</th>
                     <th>Guest</th>
                     <th>Room</th>
-                    <th>Check-in</th>
-                    <th>Check-out</th>
-                    <th>Days</th>
+                    <th>Reserved From</th>
+                    <th>Reserved Until</th>
+                    <th>Nights</th>
                     <th>Total</th>
                     <th>Paid</th>
                     <th>Status</th>
@@ -151,9 +151,9 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="fw-semibold">#<?php echo e($b['room_number']); ?></div>
                         <div class="text-muted small"><?php echo e($b['type_name']); ?></div>
                     </td>
-                    <td><?php echo date('d M Y', strtotime($b['check_in_date'])); ?></td>
-                    <td><?php echo date('d M Y', strtotime($b['check_out_date'])); ?></td>
-                    <td><?php echo (int)$b['total_days']; ?></td>
+                    <td><?php echo date('d M Y', strtotime($b['reserved_from'])); ?></td>
+                    <td><?php echo date('d M Y', strtotime($b['reserved_until'])); ?></td>
+                    <td><?php echo (int)$b['reserved_nights']; ?></td>
                     <td class="fw-semibold">৳<?php echo money($grandTotal); ?></td>
                     <td class="text-success">৳<?php echo money($paid); ?></td>
                     <td>

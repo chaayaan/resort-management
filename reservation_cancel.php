@@ -13,19 +13,19 @@ $bookingId = (int)($_GET['booking_id'] ?? $_POST['booking_id'] ?? 0);
 // =====================================================
 if ($bookingId <= 0) {
     $reserved = fetch_all($conn, "
-        SELECT b.id AS booking_id, r.room_number, g.full_name, g.phone, b.check_in_date, b.check_out_date
+        SELECT b.id AS booking_id, b.reservation_no, r.room_number, g.full_name, g.phone, b.reserved_from, b.reserved_until
         FROM bookings b
         JOIN rooms r ON r.id = b.room_id
         JOIN guests g ON g.id = b.guest_id
         WHERE b.status = 'reserved'
-        ORDER BY b.check_in_date ASC
+        ORDER BY b.reserved_from ASC
     ");
 
     require_once __DIR__ . '/includes/header.php';
     ?>
     <div class="page-header">
         <h3>Cancel Reservation — Select Booking</h3>
-        <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
     </div>
 
     <?php if (empty($reserved)): ?>
@@ -34,14 +34,15 @@ if ($bookingId <= 0) {
         <div class="card-form">
             <div class="table-responsive">
                 <table class="table align-middle">
-                    <thead><tr><th>Room</th><th>Guest</th><th>Check-in</th><th>Check-out</th><th class="text-end">Action</th></tr></thead>
+                    <thead><tr><th>Reservation #</th><th>Room</th><th>Guest</th><th>Reserved From</th><th>Reserved Until</th><th class="text-end">Action</th></tr></thead>
                     <tbody>
                     <?php foreach ($reserved as $r): ?>
                         <tr>
+                            <td class="text-muted small"><?php echo e($r['reservation_no']); ?></td>
                             <td class="fw-semibold">#<?php echo e($r['room_number']); ?></td>
                             <td><?php echo e($r['full_name']); ?> <span class="text-muted small">(<?php echo e($r['phone']); ?>)</span></td>
-                            <td><?php echo date('d M Y', strtotime($r['check_in_date'])); ?></td>
-                            <td><?php echo date('d M Y', strtotime($r['check_out_date'])); ?></td>
+                            <td><?php echo date('d M Y', strtotime($r['reserved_from'])); ?></td>
+                            <td><?php echo date('d M Y', strtotime($r['reserved_until'])); ?></td>
                             <td class="text-end">
                                 <a href="reservation_cancel.php?booking_id=<?php echo (int)$r['booking_id']; ?>" class="btn btn-sm btn-danger">Cancel</a>
                             </td>
@@ -75,7 +76,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
-            mysqli_query($conn, "UPDATE rooms SET status = 'available' WHERE id = " . (int)$booking['room_id']);
+            // No change to rooms.status needed here: a 'reserved' booking never set
+            // rooms.status to 'occupied' in the first place (that only happens at
+            // check-in), and availability is derived from booking date ranges, so
+            // cancelling simply removes this booking from the overlap check.
 
             mysqli_commit($conn);
             header('Location: bookings.php?cancelled=1');
@@ -113,7 +117,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="page-header">
     <h3>Cancel Reservation — Room #<?php echo e($booking['room_number']); ?></h3>
-    <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
@@ -123,6 +127,10 @@ require_once __DIR__ . '/includes/header.php';
         <div class="card-form">
             <div class="section-title">Reservation Details</div>
             <div class="row mb-2">
+                <div class="col-6"><span class="text-muted">Reservation #</span><div class="fw-semibold"><?php echo e($booking['reservation_no']); ?></div></div>
+                <div class="col-6"><span class="text-muted">Reservation Date</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reservation_date'])); ?></div></div>
+            </div>
+            <div class="row mb-2">
                 <div class="col-6"><span class="text-muted">Guest</span><div class="fw-semibold"><?php echo e($booking['full_name']); ?></div></div>
                 <div class="col-6"><span class="text-muted">Phone</span><div class="fw-semibold"><?php echo e($booking['phone']); ?></div></div>
             </div>
@@ -131,11 +139,11 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="col-6"><span class="text-muted">Price / Day</span><div class="fw-semibold">৳<?php echo money($booking['price_per_day']); ?></div></div>
             </div>
             <div class="row mb-2">
-                <div class="col-6"><span class="text-muted">Check-in Date</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['check_in_date'])); ?></div></div>
-                <div class="col-6"><span class="text-muted">Check-out Date</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['check_out_date'])); ?></div></div>
+                <div class="col-6"><span class="text-muted">Reserved From</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reserved_from'])); ?></div></div>
+                <div class="col-6"><span class="text-muted">Reserved Until</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reserved_until'])); ?></div></div>
             </div>
             <div class="row mb-2">
-                <div class="col-6"><span class="text-muted">Total Days</span><div class="fw-semibold"><?php echo (int)$booking['total_days']; ?></div></div>
+                <div class="col-6"><span class="text-muted">Reserved Nights</span><div class="fw-semibold"><?php echo (int)$booking['reserved_nights']; ?></div></div>
                 <div class="col-6"><span class="text-muted">Total Room Charge</span><div class="fw-semibold text-success">৳<?php echo money($booking['room_charge_total']); ?></div></div>
             </div>
         </div>
@@ -145,7 +153,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="card-form">
             <div class="section-title">Confirm Cancellation</div>
             <div class="alert alert-warning">
-                Cancelling will free up Room #<?php echo e($booking['room_number']); ?> and mark this reservation as <strong>cancelled</strong>. This cannot be undone.
+                Cancelling will free up Room #<?php echo e($booking['room_number']); ?> for these dates and mark this reservation as <strong>cancelled</strong>. This cannot be undone.
             </div>
             <form method="POST">
                 <input type="hidden" name="booking_id" value="<?php echo $bookingId; ?>">

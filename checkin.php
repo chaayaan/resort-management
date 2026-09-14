@@ -9,13 +9,14 @@ $error = '';
 $bookingId = (int)($_GET['booking_id'] ?? $_POST['booking_id'] ?? 0);
 
 if ($bookingId <= 0) {
-    header('Location: index.php');
+    header('Location: frontdesk.php');
     exit;
 }
 
-// ---- Handle advance payment submission ----
+// ---- Handle advance payment + discount submission ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $advance = (float)($_POST['advance_paid'] ?? 0);
+    $discount = (float)($_POST['discount'] ?? 0);
     $paymentMethod = trim($_POST['payment_method'] ?? 'cash');
 
     $booking = fetch_one($conn, "SELECT * FROM bookings WHERE id = $bookingId AND status = 'reserved'");
@@ -24,11 +25,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Booking not found or already checked in.';
     } elseif ($advance < 0) {
         $error = 'Advance payment cannot be negative.';
+    } elseif ($discount < 0) {
+        $error = 'Discount cannot be negative.';
     } else {
         mysqli_begin_transaction($conn);
         try {
-            $stmt = mysqli_prepare($conn, "UPDATE bookings SET advance_paid = ?, status = 'checked_in', actual_check_in_at = NOW() WHERE id = ?");
-            mysqli_stmt_bind_param($stmt, 'di', $advance, $bookingId);
+            // checkin_at records the ACTUAL arrival timestamp, independent of the
+            // planned reserved_from date (guest may arrive early, late, or exactly on time).
+            $stmt = mysqli_prepare($conn, "UPDATE bookings SET advance_paid = ?, discount = ?, status = 'checked_in', checkin_at = NOW() WHERE id = ?");
+            mysqli_stmt_bind_param($stmt, 'ddi', $advance, $discount, $bookingId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
@@ -75,7 +80,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="page-header">
     <h3>Check-In — Room #<?php echo e($booking['room_number']); ?></h3>
-    <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
@@ -97,14 +102,18 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="row mb-2">
                 <div class="col-6"><span class="text-muted">Room Type</span><div class="fw-semibold"><?php echo e($booking['type_name']); ?></div></div>
-                <div class="col-6"><span class="text-muted">Price / Day</span><div class="fw-semibold">$<?php echo money($booking['price_per_day']); ?></div></div>
+                <div class="col-6"><span class="text-muted">Price / Day</span><div class="fw-semibold">৳<?php echo money($booking['price_per_day']); ?></div></div>
             </div>
             <div class="row mb-2">
-                <div class="col-6"><span class="text-muted">Check-in Date</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['check_in_date'])); ?></div></div>
-                <div class="col-6"><span class="text-muted">Check-out Date</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['check_out_date'])); ?></div></div>
+                <div class="col-6"><span class="text-muted">Reservation #</span><div class="fw-semibold"><?php echo e($booking['reservation_no']); ?></div></div>
+                <div class="col-6"><span class="text-muted">Reservation Date</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reservation_date'])); ?></div></div>
             </div>
             <div class="row mb-2">
-                <div class="col-6"><span class="text-muted">Total Days</span><div class="fw-semibold"><?php echo (int)$booking['total_days']; ?></div></div>
+                <div class="col-6"><span class="text-muted">Reserved From</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reserved_from'])); ?></div></div>
+                <div class="col-6"><span class="text-muted">Reserved Until</span><div class="fw-semibold"><?php echo date('d M Y', strtotime($booking['reserved_until'])); ?></div></div>
+            </div>
+            <div class="row mb-2">
+                <div class="col-6"><span class="text-muted">Reserved Nights</span><div class="fw-semibold"><?php echo (int)$booking['reserved_nights']; ?></div></div>
                 <div class="col-6"><span class="text-muted">Total Room Charge</span><div class="fw-semibold text-success">৳<?php echo money($booking['room_charge_total']); ?></div></div>
             </div>
 
@@ -123,10 +132,24 @@ require_once __DIR__ . '/includes/header.php';
             <div class="section-title">Advance Payment</div>
             <form method="POST">
                 <input type="hidden" name="booking_id" value="<?php echo $bookingId; ?>">
+
+                <div class="mb-3">
+                    <label class="form-label">Discount (৳)</label>
+                    <input type="number" step="0.01" min="0" name="discount" id="checkinDiscount" class="form-control" value="0">
+                    <div class="form-text">Applied against the total room charge below.</div>
+                </div>
+
+                <div class="p-3 rounded mb-3" style="background:#f4f6f9;" data-total="<?php echo (float)$booking['room_charge_total']; ?>">
+                    <div class="d-flex justify-content-between"><span>Total Room Charge</span><strong>৳<?php echo money($booking['room_charge_total']); ?></strong></div>
+                    <div class="d-flex justify-content-between"><span>Discount</span><strong id="checkinDiscountDisplay">-৳0.00</strong></div>
+                    <hr class="my-2">
+                    <div class="d-flex justify-content-between fs-5"><span>Net Due</span><strong class="text-success" id="checkinNetDue">৳<?php echo money($booking['room_charge_total']); ?></strong></div>
+                </div>
+
                 <div class="mb-3">
                     <label class="form-label">Advance Amount (৳)</label>
-                    <input type="number" step="0.01" min="0" name="advance_paid" class="form-control" value="0" required>
-                    <div class="form-text">Total due: ৳<?php echo money($booking['room_charge_total']); ?></div>
+                    <input type="number" step="0.01" min="0" name="advance_paid" id="checkinAdvance" class="form-control" value="0" required>
+                    <div class="form-text">This is the amount collected now; it does not need to equal the net due.</div>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Payment Method</label>
@@ -145,4 +168,33 @@ require_once __DIR__ . '/includes/header.php';
 
 <?php endif; ?>
 
-<?php require_once __DIR__ . '/includes/footer.php'; ?>
+<?php
+$extraScript = <<<'HTML'
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const discountInput = document.getElementById('checkinDiscount');
+    const discountDisplay = document.getElementById('checkinDiscountDisplay');
+    const netDueEl = document.getElementById('checkinNetDue');
+    const totalBox = discountInput ? discountInput.closest('form').querySelector('[data-total]') : null;
+
+    if (!discountInput || !totalBox) return;
+
+    const total = parseFloat(totalBox.dataset.total || 0);
+
+    function recalc() {
+        let discount = parseFloat(discountInput.value || 0);
+        if (isNaN(discount) || discount < 0) discount = 0;
+        let net = total - discount;
+        if (net < 0) net = 0;
+        discountDisplay.textContent = '-৳' + discount.toFixed(2);
+        netDueEl.textContent = '৳' + net.toFixed(2);
+    }
+
+    discountInput.addEventListener('input', recalc);
+    recalc();
+});
+</script>
+HTML;
+
+require_once __DIR__ . '/includes/footer.php';
+?>
