@@ -131,7 +131,7 @@ require_once __DIR__ . '/includes/header.php';
             <tbody>
                 <?php foreach ($bookings as $b): ?>
                 <?php
-                    $grandTotal = (float)$b['room_charge_total'] + (float)$b['extension_charge_total'] - (float)$b['discount'];
+                    $grandTotal = (float)$b['room_charge_total'] + (float)$b['extension_charge_total'] + (float)$b['service_charge_total'] - (float)$b['discount'];
                     $paid = (float)$b['total_paid'];
                     $balance = $grandTotal - $paid;
                     $statusClass = [
@@ -169,6 +169,7 @@ require_once __DIR__ . '/includes/header.php';
                             <a href="checkin.php?booking_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-primary">Check In</a>
                         <?php elseif ($b['status'] === 'checked_in'): ?>
                             <a href="extend.php?booking_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-secondary">Extend</a>
+                            <a href="service.php?booking_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-outline-secondary">Service</a>
                             <a href="checkout.php?booking_id=<?php echo (int)$b['id']; ?>" class="btn btn-sm btn-danger">Checkout</a>
                         <?php endif; ?>
                     </td>

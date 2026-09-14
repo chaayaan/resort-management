@@ -136,7 +136,7 @@ if (!$booking || $booking['status'] !== 'checked_in') {
 $paidSoFar = fetch_one($conn, "SELECT COALESCE(SUM(amount),0) AS total FROM payments WHERE booking_id = $bookingId AND payment_type != 'refund'");
 $totalPaidSoFar = $paidSoFar ? (float)$paidSoFar['total'] : 0;
 
-$grandTotal = (float)$booking['room_charge_total'] + (float)$booking['extension_charge_total'];
+$grandTotal = (float)$booking['room_charge_total'] + (float)$booking['extension_charge_total'] + (float)$booking['service_charge_total'];
 $existingDiscount = (float)$booking['discount']; // discount already applied at check-in
 $balanceBeforeDiscount = $grandTotal - $existingDiscount - $totalPaidSoFar;
 
@@ -145,7 +145,10 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="page-header">
     <h3>Checkout — Room #<?php echo e($booking['room_number']); ?></h3>
-    <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    <div class="d-flex gap-2">
+        <a href="service.php?booking_id=<?php echo $bookingId; ?>" class="btn btn-outline-secondary btn-sm">+ Add Service</a>
+        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    </div>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>
@@ -168,6 +171,9 @@ require_once __DIR__ . '/includes/header.php';
                     <?php if ((float)$booking['extension_charge_total'] > 0): ?>
                     <tr><td>Extension Charges</td><td class="text-end">৳<?php echo money($booking['extension_charge_total']); ?></td></tr>
                     <?php endif; ?>
+                    <?php if ((float)$booking['service_charge_total'] > 0): ?>
+                    <tr><td>Service Charges</td><td class="text-end">৳<?php echo money($booking['service_charge_total']); ?></td></tr>
+                    <?php endif; ?>
                     <tr class="table-light"><td class="fw-bold">Total Charges</td><td class="text-end fw-bold">৳<?php echo money($grandTotal); ?></td></tr>
                     <?php if ($existingDiscount > 0): ?>
                     <tr><td>Discount (applied at check-in)</td><td class="text-end text-danger">-৳<?php echo money($existingDiscount); ?></td></tr>
@@ -175,6 +181,9 @@ require_once __DIR__ . '/includes/header.php';
                     <tr><td>Advance Paid</td><td class="text-end text-success">-৳<?php echo money($booking['advance_paid']); ?></td></tr>
                     <?php if ((float)$booking['extra_paid'] > 0): ?>
                     <tr><td>Extension Payments</td><td class="text-end text-success">-৳<?php echo money($booking['extra_paid']); ?></td></tr>
+                    <?php endif; ?>
+                    <?php if ((float)$booking['service_paid'] > 0): ?>
+                    <tr><td>Service Payments</td><td class="text-end text-success">-৳<?php echo money($booking['service_paid']); ?></td></tr>
                     <?php endif; ?>
                     <tr class="table-light"><td class="fw-bold">Balance Before Additional Discount</td><td class="text-end fw-bold" id="balanceBeforeDiscount" data-value="<?php echo $balanceBeforeDiscount; ?>">৳<?php echo money($balanceBeforeDiscount); ?></td></tr>
                 </tbody>

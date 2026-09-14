@@ -17,7 +17,7 @@ $wifiName      = $settings['wifi_name'] ?? '';
 $wifiPassword  = $settings['wifi_password'] ?? '';
 
 $bookingId = (int)($_GET['booking_id'] ?? 0);
-$type = $_GET['type'] ?? 'checkin'; // checkin | extend | checkout
+$type = $_GET['type'] ?? 'checkin'; // checkin | extend | service | checkout
 
 if ($bookingId <= 0) {
     header('Location: frontdesk.php');
@@ -46,7 +46,18 @@ foreach ($payments as $p) {
     else $totalPaid -= $p['amount'];
 }
 
-$grandTotal = (float)$booking['room_charge_total'] + (float)$booking['extension_charge_total'] - (float)$booking['discount'];
+$services = fetch_all($conn, "SELECT * FROM booking_services WHERE booking_id = $bookingId ORDER BY created_at ASC");
+$serviceIds = array_column($services, 'id');
+$serviceItemsByOrder = [];
+if (!empty($serviceIds)) {
+    $idList = implode(',', array_map('intval', $serviceIds));
+    $allServiceItems = fetch_all($conn, "SELECT * FROM booking_service_items WHERE booking_service_id IN ($idList) ORDER BY id ASC");
+    foreach ($allServiceItems as $it) {
+        $serviceItemsByOrder[$it['booking_service_id']][] = $it;
+    }
+}
+
+$grandTotal = (float)$booking['room_charge_total'] + (float)$booking['extension_charge_total'] + (float)$booking['service_charge_total'] - (float)$booking['discount'];
 $balanceDue = $grandTotal - $totalPaid;
 
 $invoiceNo = 'INV-' . date('Y') . '-' . str_pad($booking['id'], 4, '0', STR_PAD_LEFT);
@@ -366,6 +377,22 @@ require_once __DIR__ . '/includes/header.php';
                 <td class="num">BDT <?php echo money($booking['extension_charge_total']); ?></td>
             </tr>
             <?php endif; ?>
+            <?php foreach ($services as $s): ?>
+            <tr>
+                <td>Service Order &ndash; <?php echo e($s['service_type']); ?> #<?php echo (int)$s['id']; ?><?php if (!empty($s['notes'])): ?><span class="text-muted"> (<?php echo e($s['notes']); ?>)</span><?php endif; ?></td>
+                <td class="num">&mdash;</td>
+                <td class="num">&mdash;</td>
+                <td class="num">BDT <?php echo money($s['amount']); ?></td>
+            </tr>
+            <?php foreach (($serviceItemsByOrder[$s['id']] ?? []) as $it): ?>
+            <tr>
+                <td style="padding-left: 22px; color:#7a7a6c;">&ndash; <?php echo e($it['item_name']); ?></td>
+                <td class="num"><?php echo (int)$it['quantity']; ?></td>
+                <td class="num">BDT <?php echo money($it['price']); ?></td>
+                <td class="num">BDT <?php echo money($it['total_price']); ?></td>
+            </tr>
+            <?php endforeach; ?>
+            <?php endforeach; ?>
             <?php if ((float)$booking['discount'] > 0): ?>
             <tr class="discount-row">
                 <td>Discount</td>
@@ -379,7 +406,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <div class="inv-summary">
         <table>
-            <tr><td>Subtotal:</td><td class="num">BDT <?php echo money($booking['room_charge_total'] + $booking['extension_charge_total']); ?></td></tr>
+            <tr><td>Subtotal:</td><td class="num">BDT <?php echo money($booking['room_charge_total'] + $booking['extension_charge_total'] + $booking['service_charge_total']); ?></td></tr>
             <?php if ((float)$booking['discount'] > 0): ?>
             <tr><td>Discount:</td><td class="num">-BDT <?php echo money($booking['discount']); ?></td></tr>
             <?php endif; ?>
@@ -475,6 +502,12 @@ require_once __DIR__ . '/includes/header.php';
             <td class="right">BDT <?php echo money($booking['extension_charge_total']); ?></td>
         </tr>
         <?php endif; ?>
+        <?php foreach ($services as $s): ?>
+        <tr>
+            <td>Svc: <?php echo e($s['service_type']); ?> #<?php echo (int)$s['id']; ?></td>
+            <td class="right">BDT <?php echo money($s['amount']); ?></td>
+        </tr>
+        <?php endforeach; ?>
         <?php if ((float)$booking['discount'] > 0): ?>
         <tr>
             <td>Discount</td>
@@ -532,6 +565,7 @@ require_once __DIR__ . '/includes/header.php';
 <div class="text-center mt-3 no-print">
     <?php if ($booking['status'] === 'checked_in'): ?>
         <a href="extend.php?booking_id=<?php echo $bookingId; ?>" class="btn btn-outline-secondary btn-sm">Extend Stay</a>
+        <a href="service.php?booking_id=<?php echo $bookingId; ?>" class="btn btn-outline-secondary btn-sm">Add Service</a>
         <a href="checkout.php?booking_id=<?php echo $bookingId; ?>" class="btn btn-danger btn-sm">Checkout</a>
     <?php endif; ?>
 </div>

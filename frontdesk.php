@@ -268,6 +268,7 @@ require_once __DIR__ . '/includes/header.php';
     display: flex;
     gap: 8px;
     margin-top: 12px;
+    flex-wrap: wrap;
 }
 
 #fdPage .fd-btn {
@@ -278,6 +279,12 @@ require_once __DIR__ . '/includes/header.php';
     padding: 9px 12px;
     width: 100%;
     text-align: center;
+}
+
+#fdPage .fd-actions.fd-actions-triple .fd-btn {
+    width: calc((100% - 16px) / 3);
+    padding-left: 6px;
+    padding-right: 6px;
 }
 
 #fdPage .fd-btn-book {
@@ -304,6 +311,12 @@ require_once __DIR__ . '/includes/header.php';
     color: #fff;
 }
 #fdPage .fd-btn-checkout:hover { background: #a02020; }
+
+#fdPage .fd-btn-service {
+    background: #6b46c1;
+    color: #fff;
+}
+#fdPage .fd-btn-service:hover { background: #55348f; }
 
 #fdPage .fd-empty {
     background: #fff7e6;
@@ -333,6 +346,7 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <div class="fd-header-actions">
             <button class="fd-btn-refresh" id="refreshBtn">&#8635; Refresh</button>
+            <a href="services.php" class="fd-btn-refresh" style="text-decoration:none;">&#127860; Services</a>
             <a href="reservation.php" class="fd-btn-new">+ New Reservation</a>
         </div>
     </div>
@@ -401,8 +415,9 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="fd-meta">Next available:</div>
                     <div class="fd-meta fd-next-date"><?php echo e($nextAvailable); ?></div>
                     <div class="fd-spacer"></div>
-                    <div class="fd-actions">
+                    <div class="fd-actions fd-actions-triple">
                         <button class="fd-btn fd-btn-extend btn-extend">Extend</button>
+                        <button class="fd-btn fd-btn-service btn-service">Service</button>
                         <button class="fd-btn fd-btn-checkout btn-checkout">Checkout</button>
                     </div>
                 <?php endif; ?>
@@ -435,6 +450,8 @@ document.addEventListener('DOMContentLoaded', function () {
             window.location.href = 'checkin.php?booking_id=' + bookingId;
         } else if (e.target.classList.contains('btn-extend')) {
             window.location.href = 'extend.php?booking_id=' + bookingId;
+        } else if (e.target.classList.contains('btn-service')) {
+            window.location.href = 'service.php?booking_id=' + bookingId;
         } else if (e.target.classList.contains('btn-checkout')) {
             window.location.href = 'checkout.php?booking_id=' + bookingId;
         } else {
