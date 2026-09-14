@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_login();
 
 $pageTitle = 'Extend Stay';
 $active = 'extend';
@@ -91,10 +93,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mysqli_stmt_close($stmt);
 
             $stmt = mysqli_prepare($conn, "
-                INSERT INTO booking_extensions (booking_id, old_reserved_until, new_reserved_until, added_nights, added_charge, payment_amount)
-                VALUES (?,?,?,?,?,?)
+                INSERT INTO booking_extensions (booking_id, old_reserved_until, new_reserved_until, added_nights, added_charge, payment_amount, extended_by)
+                VALUES (?,?,?,?,?,?,?)
             ");
-            mysqli_stmt_bind_param($stmt, 'issidd', $bookingId, $oldReservedUntil, $newReservedUntil, $addedNights, $addedCharge, $paymentAmount);
+            $extendedByUserId = (int)current_user()['id'];
+            mysqli_stmt_bind_param($stmt, 'issiddi', $bookingId, $oldReservedUntil, $newReservedUntil, $addedNights, $addedCharge, $paymentAmount, $extendedByUserId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 

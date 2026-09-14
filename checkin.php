@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_login();
 
 $pageTitle = 'Check-In';
 $active = 'dashboard';
@@ -9,7 +11,7 @@ $error = '';
 $bookingId = (int)($_GET['booking_id'] ?? $_POST['booking_id'] ?? 0);
 
 if ($bookingId <= 0) {
-    header('Location: frontdesk.php');
+    header('Location: index.php');
     exit;
 }
 
@@ -32,8 +34,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             // checkin_at records the ACTUAL arrival timestamp, independent of the
             // planned reserved_from date (guest may arrive early, late, or exactly on time).
-            $stmt = mysqli_prepare($conn, "UPDATE bookings SET advance_paid = ?, discount = ?, status = 'checked_in', checkin_at = NOW() WHERE id = ?");
-            mysqli_stmt_bind_param($stmt, 'ddi', $advance, $discount, $bookingId);
+            $stmt = mysqli_prepare($conn, "UPDATE bookings SET advance_paid = ?, discount = ?, status = 'checked_in', checkin_at = NOW(), checkin_by = ? WHERE id = ?");
+            $checkinByUserId = (int)current_user()['id'];
+            mysqli_stmt_bind_param($stmt, 'ddii', $advance, $discount, $checkinByUserId, $bookingId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
@@ -80,7 +83,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="page-header">
     <h3>Check-In — Room #<?php echo e($booking['room_number']); ?></h3>
-    <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>

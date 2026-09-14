@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_login();
 
 $pageTitle = 'Cancel Reservation';
 $active = 'reservation';
@@ -25,7 +27,7 @@ if ($bookingId <= 0) {
     ?>
     <div class="page-header">
         <h3>Cancel Reservation — Select Booking</h3>
-        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+        <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
     </div>
 
     <?php if (empty($reserved)): ?>
@@ -71,8 +73,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         mysqli_begin_transaction($conn);
         try {
-            $stmt = mysqli_prepare($conn, "UPDATE bookings SET status = 'cancelled', notes = ? WHERE id = ?");
-            mysqli_stmt_bind_param($stmt, 'si', $reason, $bookingId);
+            $stmt = mysqli_prepare($conn, "UPDATE bookings SET status = 'cancelled', notes = ?, cancelled_by = ? WHERE id = ?");
+            $cancelledByUserId = (int)current_user()['id'];
+            mysqli_stmt_bind_param($stmt, 'sii', $reason, $cancelledByUserId, $bookingId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 
@@ -117,7 +120,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="page-header">
     <h3>Cancel Reservation — Room #<?php echo e($booking['room_number']); ?></h3>
-    <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+    <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
 </div>
 
 <?php if ($error): ?><div class="alert alert-danger"><?php echo e($error); ?></div><?php endif; ?>

@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_login();
 
 $pageTitle = 'Checkout';
 $active = 'checkout';
@@ -82,10 +84,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // planned reserved_until date (guest may leave early, late, or on time).
             $stmt = mysqli_prepare($conn, "
                 UPDATE bookings
-                SET final_paid = ?, discount = ?, status = 'checked_out', checkout_at = NOW()
+                SET final_paid = ?, discount = ?, status = 'checked_out', checkout_at = NOW(), checkout_by = ?
                 WHERE id = ?
             ");
-            mysqli_stmt_bind_param($stmt, 'ddi', $newFinalPaid, $newTotalDiscount, $bookingId);
+            $checkoutByUserId = (int)current_user()['id'];
+            mysqli_stmt_bind_param($stmt, 'ddii', $newFinalPaid, $newTotalDiscount, $checkoutByUserId, $bookingId);
             mysqli_stmt_execute($stmt);
             mysqli_stmt_close($stmt);
 

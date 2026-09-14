@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/config/db.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+require_login();
 
 // =====================================================
 // AJAX: Guest search (same-page endpoint, no external API)
@@ -106,16 +108,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $stmt = mysqli_prepare($conn, "
                     INSERT INTO bookings
-                        (reservation_no, room_id, guest_id, reservation_date, reserved_from, reserved_nights, reserved_until,
+                        (reservation_no, room_id, guest_id, reservation_date, created_by, reserved_from, reserved_nights, reserved_until,
                          adults, children, price_per_day, room_charge_total, status)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,'reserved')
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'reserved')
                 ");
                 // Params in order: reservation_no(s), room_id(i), guest_id(i), reservation_date(s),
-                // reserved_from(s), reserved_nights(i), reserved_until(s), adults(i), children(i),
-                // price_per_day(d), room_charge_total(d)
+                // created_by(i), reserved_from(s), reserved_nights(i), reserved_until(s), adults(i),
+                // children(i), price_per_day(d), room_charge_total(d)
+                $createdByUserId = (int)current_user()['id'];
                 mysqli_stmt_bind_param(
-                    $stmt, 'siissisiidd',
-                    $reservationNo, $roomId, $guestId, $reservationDate, $reservedFrom, $reservedNights, $reservedUntil,
+                    $stmt, 'siisisisiidd',
+                    $reservationNo, $roomId, $guestId, $reservationDate, $createdByUserId, $reservedFrom, $reservedNights, $reservedUntil,
                     $adults, $children, $pricePerDay, $roomChargeTotal
                 );
                 mysqli_stmt_execute($stmt);
@@ -176,7 +179,7 @@ require_once __DIR__ . '/includes/header.php';
     <h3>New Reservation</h3>
     <div class="d-flex gap-2">
         <a href="reservation_cancel.php" class="btn btn-outline-danger btn-sm">Cancel a Reservation</a>
-        <a href="frontdesk.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
+        <a href="index.php" class="btn btn-outline-secondary btn-sm">&larr; Back to Front Desk</a>
     </div>
 </div>
 
@@ -328,7 +331,7 @@ require_once __DIR__ . '/includes/header.php';
 
         <hr class="my-4">
         <div class="d-flex justify-content-end gap-2">
-            <a href="frontdesk.php" class="btn btn-outline-secondary">Cancel</a>
+            <a href="index.php" class="btn btn-outline-secondary">Cancel</a>
             <button type="submit" class="btn btn-primary" id="submitReservation">Save Reservation &amp; Proceed to Check-In</button>
         </div>
     </form>
